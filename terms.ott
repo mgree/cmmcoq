@@ -1,0 +1,421 @@
+metavar x , y , z , f , g ::= 
+   {{ com term variables }} {{ tex \mathit{[[x]]} }} {{ repr-locally-nameless }}
+metavar l ::= {{ com locations }} {{ tex \mathit{[[l]]} }} {{ coq atom }}
+
+embed {{ coq
+
+(* OTT generates a tactic that mentions env, so even though
+   there are no environments here, we have to have the type 
+   available. *)
+Parameter env : Set.
+
+(* denotations are only defined on constants. *)
+Parameter denot : k -> k -> s.
+
+(* I'd like to use 'S' for types (like the paper), but that 
+   conflicts with nat's S in the generated code. *)
+Parameter tyh   : k -> SS.
+
+(* I don't know why OTT generates calls to these but doesn't 
+   generate the definitions. But they're trivial. *)
+Definition lc_B (B1 : B) := True.
+Definition lc_k (k1 : k) := True.
+
+(* Plugging an evaluation context with a term. *)
+Definition Fplug (F1 : F) (s1 : s) :=
+  match F1 with 
+  | F_appl s2 => s_app s1 s2
+  | F_appr s2 => s_app s2 s1 
+  | F_check SS k l => s_check SS s1 k l 
+  end.
+
+}}
+
+grammar
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% common constants and blame
+
+k :: 'k_' ::= {{ com constants }}
+  | true    :: :: true   {{ tex \mathsf{true} }}
+  | false   :: :: false  {{ tex \mathsf{false} }}
+  | others  :: :: others {{ tex \ldots }}
+
+B :: 'B_' ::= {{ com base types }}
+  | Bool         ::   :: bool   {{ tex \mathsf{Bool} }}
+  | others       ::   :: others {{ tex \ldots }}
+
+b :: 'b_' ::= {{ com blame }}
+  | blame ( l ) :: :: blame       {{ tex \mathord{\Uparrow} [[l]] }}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% lambdah types (refinements and arrows are stratified, for help in
+% the cast rule)
+
+SS :: 'SS_' ::=                       {{ com types }}
+  | { x : B | s } ::  :: refinement (+ bind x in s +) 
+             {{ tex \{[[x]]\mathord{:}[[B]][[|]][[s]]\} }}
+  | x : SS1 -> SS2  ::  :: darrow  (+ bind x in SS2 +)
+             {{ tex [[x]]\mathord{:}[[SS1]][[->]][[SS2]] }}
+  | ( SS )        :: S :: paren {{ tex ([[SS]]) }}
+     {{ coq ( [[ SS ]] ) }}
+  | tyh ( k )    :: M :: const {{ tex \operatorname{ty_h}([[k]]) }}
+     {{ coq tyh [[ k ]] }}
+  | SS { x := s } :: M :: sub   {{ tex [[SS]]\{ [[x]] := [[s]] \} }}
+     {{ coq open_SS_wrt_s [[ x SS ]] [[ s ]] }} 
+     %% I don't know why substitution is defined with open instead 
+     %% of with subst. But this seems to produce what I want.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% lambdah terms and evaluation contexts
+
+s :: 's_' ::=                                  {{ com terms }}
+  | x            ::  :: var
+  | k            ::  :: const
+  | \ x : SS . s  ::  :: lam (+ bind x in s +)
+     {{ tex [[\]][[x]]\mathord{:}[[SS]].~ [[s]] }}
+  | s s'         ::  :: app
+  | b            ::  :: blame
+  % casts
+  | < SS1 => SS2 > l  :: :: cast 
+      {{ com cast }} 
+      {{ tex \langle [[SS1]] \Rightarrow [[SS2]] \rangle^[[l]] }}
+  | < SS , s , k > l :: :: check
+      {{ com check }}
+      {{ tex \langle [[SS]], [[s]], [[k]] \rangle^[[l]] }}
+
+  | ( s )          :: S :: paren {{ tex ([[s]]) }}  {{ coq ([[ s ]]) }}
+
+  | s { x := s' }  :: M :: sub   {{ tex [[s]]\{ [[x]] := [[s']] \} }}  
+      {{ coq (open_s_wrt_s [[x s]] [[s']]) }}     
+
+  | [| k |] ( k' ) :: M :: sdenot   {{ tex \denot{[[k]]}([[s]]) }} 
+       {{ coq (denot [[k]] [[ k' ]]) }}
+
+  | F [ s ]        :: M :: scontext {{ tex [[F]] \left[ [[s]] \right] }}
+       {{ coq (Fplug [[ F ]] [[ s ]]) }}
+
+%% I'd like F_appr to have a w instead of an s, but I can't get OTT to 
+%% accept that definition. So I have a judgement "ctx" below that 
+%% picks out the F's with w's in that spot.
+F :: 'F_' ::= {{ com evaluation contexts }}
+   | __ s  :: :: appl
+   | s __  :: :: appr
+   | < SS , __ , k > l  :: :: check
+       {{ tex \langle [[SS]], [[__]], [[k]] \rangle^l }}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% terminal renderings in TeX
+
+terminals :: 'terminals_' ::=
+  | ->           ::  :: arrow   {{ tex \rightarrow }}
+
+  | \            ::  :: lambda  {{ tex \lambda }}
+  | |->          ::  :: carrow  {{ tex \mapsto }}
+
+  | in           ::  :: in      {{ tex \in }}
+  | empty        ::  :: empty   {{ tex \emptyset }}
+  | <=           ::  :: subset  {{ tex \subset }}
+  | =>           ::  :: imp     {{ tex \Rightarrow }}
+  | |-           ::  :: proves  {{ tex \vdash }}
+  | |-c          ::  :: provesc {{ tex \vdash_c }}
+  | |=           ::  :: models  {{ tex \models }}
+  | |=>          ::  :: modelsB {{ tex \models_\succ }}
+  | <:           ::  :: sub     {{ tex <: }}
+
+  | __           ::  :: hole    {{ tex \left[ \, \right] }}
+
+  | -->c         ::  :: redc    {{ tex \longrightarrow_c }}
+  | -->c*        ::  :: redcrsc {{ tex \longrightarrow_c^* }}
+  | ~~>h         ::  :: reduceh {{ tex \rightsquigarrow_h }}
+  | -->h         ::  :: redh    {{ tex \longrightarrow_h }}
+  | -->h*        ::  :: redhrsc {{ tex \longrightarrow_h^* }}
+  | -->S         ::  :: redS    {{ tex \longrightarrow_S }}
+  | -->S*        ::  :: redSrsc {{ tex \longrightarrow_S^* }}
+  | ==>          ::  :: parred  {{ tex \Rrightarrow }}
+  | ==>*         ::  :: parreds {{ tex \Rrightarrow^* }}
+
+  | phi          ::  :: phi     {{ tex \phi }}
+  | psi          ::  :: psi     {{ tex \psi }}
+
+  | ~            ::  :: lrequiv    {{ tex \sim }}
+  | ~~           ::  :: lrequivqr  {{ tex \approx }}
+  | >~           ::  :: blrequiv   {{ tex \sim_\succ }}
+  | >~~          ::  :: blrequivqr {{ tex \approx_\succ }}
+
+  | implies      ::  :: implies {{ tex \ \ \text{implies}\ \  }}
+  | and          ::  :: and     {{ tex \text{and} }}
+  | or           ::  :: or      {{ tex \text{or} }}
+
+  | |            ::  :: bar     {{ tex \mathrel{|} }}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% formulas 
+
+formula :: 'formula_' ::=          
+    | judgement               ::   :: judgement
+
+   | s1 = s2       ::   :: eqs
+         {{ coq [[s1]] = [[s2]] }}
+
+    | SS1 = SS2       ::   :: eqSS
+         {{ coq [[SS1]] = [[SS2]] }}
+
+    | lc_s s          ::  :: lc_s
+         {{ coq lc_s [[ s ]] }}
+ 
+    | lc_SS SS       ::   :: lc_SS
+         {{ coq lc_SS [[ SS ]]  }}
+
+    % logical connectives
+    | formula1 <= formula2      ::   :: subset 
+         {{ tex [[formula1]] \subseteq [[formula2]] }}
+         {{ coq [[formula1]] <= [[forumla2]] }}
+    | formula1 and formula2     ::   :: and
+         {{ coq [[formula1]] /\ [[formula2]] }}
+    | formula1 or formula2      ::   :: or
+         {{ coq [[formula1]] \/ [[formula2]] }}
+    | formula1 implies formula2 ::   :: impl
+         {{ coq [[formula1]] -> [[formula2]] }}
+   | ( formula )               :: S :: paren 
+         {{ tex ([[formula]]) }} {{ coq ( [[ formula ]] ) }}
+
+substitutions
+  single s x  :: ssubst
+  single SS x :: Ssubst 
+
+freevars  
+  s x  :: sfv
+  SS x :: SSfv
+  F  x :: Ffv
+
+%%%% END of what LNgen accepts.
+%%% These two are put down here because LNgen cannot handle subrules.
+grammar
+
+FS :: 'FS_' ::=     {{ com Function types }}
+   | x : SS1 -> SS2   ::  :: Fun (+ bind x in SS2 +)
+
+h :: 'h_' ::=       {{ com ho-casts }}
+   | < FS1 => FS2 > l ::  :: hocast
+
+w :: 'w_' ::=       {{ com values }}
+   | k                ::  :: const
+   | \ x : SS . s     ::  :: lam  (+ bind x in s +)
+   | < SS1 => SS2 > l ::  :: cast {{ com (cast functions are values, as well) }}
+   | h w ::  :: hocast
+
+q :: 'q_' ::=      {{ com results }}
+  | k                 ::  :: const
+  | \ x : SS . s      ::  :: lam  (+ bind x in s +)
+  | < SS1 => SS2 > l  ::  :: cast {{ com (cast functions are values, as well) }}
+  | b                 ::  :: blame
+  | h w ::  :: hocast
+
+subrules
+   h <:: s
+   q <:: s
+   w <:: s
+   FS <:: SS
+
+defns
+Jctx :: '' ::=
+
+  defn
+  ctx F :: :: valid_ctx :: 'valid_' {{ com [[ F ]] is a valid evaluation context }} by
+
+  ---------- :: appl
+   ctx  __ s  
+
+   ---------- :: appr
+   ctx w __
+
+   --------------------------- :: check  
+   ctx < SS , __ , k > l  
+  
+  
+defns
+Joph :: '' ::=
+
+ defn
+ s1 ~~>h s2 :: ::reduceh:: 'F_' {{ com [[s1]] reduces to [[s2]] }} by
+
+    ---------------- :: Const
+    k k' ~~>h [|k|](k')
+
+%% here (and in other rules below) I need some extra local closure 
+%% assumptions b/c OTT doesn't generate them.
+    lc_s (\x:SS.s12)
+    lc_s w2
+    ----------------------------- :: Beta
+    (\x:SS.s12) w2 ~~>h  s12{x:=w2}
+
+%% I had to add the SS1 = {x:B|s1} assumption to get ott to 
+%% generate the right rule. Inlining it gives me something I don't 
+%% want. (Also on rules below).
+    lc_SS {x:B|s1}
+    lc_SS {x:B|s2}
+    ----------------------------------------------------- :: CCheck
+    <{x:B|s1} => {x:B|s2}>l k ~~>h <{x:B|s2},s2{x:=k},k>l
+
+    lc_SS SS
+    ----------------------- :: OK
+    <SS,true,k>l ~~>h k
+
+    lc_SS SS
+    --------------------------------------- :: Fail
+    <SS,false,k>l ~~>h blame(l)
+
+    lc_SS x:SS11->SS12
+    lc_SS x:SS21->SS22
+    lc_s w'
+    ---------------------------------------------------------------- :: CDecomp
+    (<x:SS11->SS12 =>x:SS21->SS22>l w) w' ~~>h <(SS12{x:=<SS21=>SS11>l w'}) => (SS22{x:=w'})>l (w (<SS21 => SS11>l w'))
+
+defns
+JophT :: '' ::=
+
+
+ defn
+ s1 -->h s2 :: ::steph:: 'F_' {{ com [[s1]] steps to [[s2]]}} by
+
+    s1 ~~>h s2
+    ---------- :: Reduce
+    s1 -->h s2
+
+    ctx F 
+    s1 -->h s2
+    ---------------- :: Compat
+    F[s1] -->h F[s2]
+
+    ctx F
+    ------------------------- :: Blame
+    F[blame(l)] -->h blame(l)
+
+defns
+JophM :: '' ::=
+
+ defn
+ s1 -->h* s2 :: ::evalh:: 'F_' by
+
+    --------- :: Refl
+    s -->h* s
+
+    s -->h s'   
+    s' -->h* s''
+    ------------------------ :: Step
+    s -->h* s''
+
+defns
+Jparred :: '' ::=
+
+ defn
+ s1 ==> s2 :: ::parreds:: 'P_' {{ com [[s1]] parallel-reduces to [[s2]] }} by
+
+    ------- :: Refl
+    s ==> s
+
+    w ==> k'
+    ------------------ :: RConst
+    k w ==>  [|k|](k')
+
+%% The {x:=x} substitution makes the parallel reduction rule work 
+%% out. It forces OTT to include x in s12'. (See also RCDecomp).
+    s12 ==> s12'{x:=x}       
+    w2 ==> w2'
+    ------------------------------ :: RBeta
+    (\x:SS.s12) w2 ==> s12'{x:=w2'}
+
+    lc_SS  {x:B|s1}
+    s2 ==> s2'
+    ------------------------------------------------------ :: RCCheck
+    < {x:B|s1} => {x:B|s2}>l k ==> <{x:B|s2'},s2'{x:=k},k>l
+
+    lc_SS SS
+    ----------------------- :: ROK
+    <SS,true,k>l ==> k
+
+    lc_SS SS
+    ------------------------------- :: RFail
+    <SS,false,k>l ==> blame(l)
+
+    SS11 ==> SS11'  
+    SS12 ==> (SS12'{x:=x})  
+    SS21 ==> SS21'  
+    SS22 ==> (SS22'{x:=x})
+    w1 ==> w1'  
+    w2 ==> w2'
+    --------------------------------------------------------- :: RCDecomp
+    (<x:SS11->SS12 =>x:SS21->SS22>l w1) w2 ==> <(SS12'{x:=<SS21'=>SS11'>l w2'})=>(SS22'{x:=w2'})>l (w1' (<SS21' => SS11'>l w2'))
+
+%% this one works just fine.
+    SS1 ==> SS1'   
+    s12 ==> s12'
+    ------------------------- :: Lam
+    \x:SS1.s12 ==> \x:SS1'.s12'
+
+    s1 ==> s1'    
+    s2 ==> s2'
+    ------------------------- :: App
+    s1 s2 ==> s1' s2'
+
+    SS1 ==> SS1'    
+    SS2 ==> SS2'
+    ------------------------- :: Cast
+    <SS1=>SS2>l ==> <SS1'=>SS2'>l
+
+    SS ==> SS'      
+    s ==> s'
+    ----------------------- :: Check
+    <SS,s,k>l ==> <SS',s',k>l
+
+    ctx F
+    ------------------------ :: Blame
+    F[blame(l)] ==> blame(l)
+
+ defn
+ SS1 ==> SS2 :: ::parredSS:: 'P_SS' {{ com [[SS1]] parallel-reduces to [[SS2]] }} by
+
+    ------- :: Refl
+    SS ==> SS
+
+    s ==> s'
+    -------------------- :: Refine
+    {x:B|s} ==> {x:B|s'}
+
+    SS1 ==> SS1'   
+    SS2 ==> SS2'
+    ----------------------- :: Fun
+    x:SS1->SS2 ==> x:SS1'->SS2'
+
+defns
+JparredMs :: '' ::=
+
+ defn
+ s1 ==>* s2 :: ::parredsrs:: 'P_ss' by
+ 
+    --------- :: Refl
+    s ==>* s
+
+    s ==> s' 
+    s' ==>* s''
+    ---------------------- :: Step 
+    s ==>* s''
+     
+
+defns
+JparredMSS :: '' ::=
+
+  defn
+ SS1 ==>* SS2 :: ::parredSrs:: 'P_Ss' by
+
+    --------- :: Refl
+    SS ==>* SS
+
+    SS ==> SS' 
+    SS' ==>* SS''
+    ---------------------- :: Step 
+    SS ==>* SS''
+
